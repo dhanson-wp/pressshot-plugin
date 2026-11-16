@@ -214,6 +214,12 @@ function pressshot_organize_shots( WP_REST_Request $request ) {
 			return $bad;
 		}
 	}
+	if ( null !== $folder ) {
+		$exposure = pressshot_check_shot_exposure( $ids, (int) $folder );
+		if ( is_wp_error( $exposure ) ) {
+			return $exposure;
+		}
+	}
 	foreach ( $ids as $id ) {
 		if ( null !== $folder ) {
 			wp_set_object_terms( $id, (int) $folder > 0 ? array( (int) $folder ) : array(), 'pressshot_folder' );

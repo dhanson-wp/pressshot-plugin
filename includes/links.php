@@ -175,8 +175,7 @@ function pressshot_sharing_folder( $folder_id, array $live_links ) {
 	if ( $folder_id < 1 || ! $live_links ) {
 		return null;
 	}
-	$chain = array_merge( array( $folder_id ), array_map( 'intval', get_ancestors( $folder_id, 'pressshot_folder', 'taxonomy' ) ) );
-	foreach ( $chain as $term_id ) {
+	foreach ( pressshot_folder_chain( $folder_id ) as $term_id ) {
 		if ( isset( $live_links[ $term_id ] ) ) {
 			$term = get_term( $term_id, 'pressshot_folder' );
 			return $term instanceof WP_Term ? $term : null;
@@ -184,6 +183,157 @@ function pressshot_sharing_folder( $folder_id, array $live_links ) {
 	}
 	return null;
 }
+
+/** The folder and its ancestors, nearest first. Empty for 0 (no folder). */
+function pressshot_folder_chain( $folder_id ) {
+	$folder_id = (int) $folder_id;
+	if ( $folder_id < 1 ) {
+		return array();
+	}
+	return array_merge( array( $folder_id ), array_map( 'intval', get_ancestors( $folder_id, 'pressshot_folder', 'taxonomy' ) ) );
+}
+
+/**
+ * Folders whose live link would start sharing something moved from one folder to another: the
+ * live links over the destination that don't already cover the source. Nearest first.
+ *
+ * @param int        $from       Where it sits now (0 for no folder).
+ * @param int        $to         Where it's going (0 for no folder).
+ * @param array|null $live_links From pressshot_live_folder_links(); looked up when null.
+ * @return int[] Folder term ids.
+ */
+function pressshot_newly_sharing_folders( $from, $to, $live_links = null ) {
+	$to_chain = pressshot_folder_chain( $to );
+	if ( ! $to_chain ) {
+		return array();
+	}
+	$live_links = null === $live_links ? pressshot_live_folder_links() : $live_links;
+	$sharing    = array_filter(
+		$to_chain,
+		function ( $term_id ) use ( $live_links ) {
+			return isset( $live_links[ $term_id ] );
+		}
+	);
+	return array_values( array_diff( $sharing, pressshot_folder_chain( $from ) ) );
+}
+
+/** The 403 for a move that would share something without the permission a link needs. */
+function pressshot_exposure_error( $folder_id, $message, array $data = array() ) {
+	$term = get_term( (int) $folder_id, 'pressshot_folder' );
+	$name = $term instanceof WP_Term ? $term->name : '';
+	return new WP_Error(
+		'pressshot_link_exposure',
+		sprintf( $message, $name ),
+		array_merge(
+			array(
+				'status'     => 403,
+				'folderId'   => (int) $folder_id,
+				'folderName' => $name,
+			),
+			$data
+		)
+	);
+}
+
+/**
+ * Filing shots into a folder a live link covers shares them, so it takes the permission a shot
+ * link takes: edit_post on each shot the move would newly share. True, or a 403 naming the folder.
+ *
+ * @param int[] $shot_ids Shots being filed.
+ * @param int   $to       The destination folder (0 for no folder).
+ * @return true|WP_Error
+ */
+function pressshot_check_shot_exposure( array $shot_ids, $to ) {
+	if ( ! pressshot_folder_chain( $to ) ) {
+		return true;
+	}
+	$live_links = pressshot_live_folder_links();
+	$blocked    = 0;
+	$folder     = 0;
+	foreach ( $shot_ids as $shot_id ) {
+		$terms   = wp_get_object_terms( (int) $shot_id, 'pressshot_folder', array( 'fields' => 'ids' ) );
+		$from    = is_array( $terms ) && $terms ? (int) $terms[0] : 0;
+		$sharing = pressshot_newly_sharing_folders( $from, $to, $live_links );
+		if ( $sharing && ! current_user_can( 'edit_post', (int) $shot_id ) ) {
+			++$blocked;
+			$folder = $folder ? $folder : $sharing[0];
+		}
+	}
+	if ( ! $blocked ) {
+		return true;
+	}
+	return pressshot_exposure_error(
+		$folder,
+		/* translators: %s: folder name */
+		_n(
+			'"%s" has a share link, and you can\'t share this shot, so you can\'t file it there.',
+			'"%s" has a share link, and you can\'t share some of these shots, so you can\'t file them there.',
+			$blocked,
+			'pressshot'
+		),
+		array( 'count' => $blocked )
+	);
+}
+
+/**
+ * Moving folders under a folder a live link covers shares them, so it takes the permission a
+ * folder link takes: edit_others_posts. True, or a 403 naming the folder.
+ *
+ * @param int $from Their parent now (0 for top level).
+ * @param int $to   The new parent (0 for top level).
+ * @return true|WP_Error
+ */
+function pressshot_check_folder_exposure( $from, $to ) {
+	$sharing = pressshot_newly_sharing_folders( $from, $to );
+	if ( ! $sharing || current_user_can( 'edit_others_posts' ) ) {
+		return true;
+	}
+	return pressshot_exposure_error(
+		$sharing[0],
+		/* translators: %s: folder name */
+		__( '"%s" has a share link, and you can\'t share folders, so you can\'t move a folder into it.', 'pressshot' )
+	);
+}
+
+// Core's folder route: a parent change under a live link is refused before WordPress saves it.
+// Only for Library users, so nobody else learns which folders are shared; core refuses the rest.
+add_filter(
+	'rest_request_before_callbacks',
+	function ( $response, $handler, $request ) {
+		if ( is_wp_error( $response ) || ! in_array( $request->get_method(), array( 'POST', 'PUT', 'PATCH' ), true ) ) {
+			return $response;
+		}
+		if ( ! preg_match( '#^/wp/v2/pressshot-folders/(\d+)$#', $request->get_route(), $match ) || null === $request->get_param( 'parent' ) ) {
+			return $response;
+		}
+		$term = get_term( (int) $match[1], 'pressshot_folder' );
+		if ( ! $term instanceof WP_Term || ! pressshot_can_use_library() ) {
+			return $response;
+		}
+		$check = pressshot_check_folder_exposure( (int) $term->parent, (int) $request->get_param( 'parent' ) );
+		return is_wp_error( $check ) ? $check : $response;
+	},
+	10,
+	3
+);
+
+// Anything else that reparents a folder (the Media > PressShot folders screen, Quick Edit) keeps
+// the old parent when the move would share it. People signed out (WP-CLI, cron) aren't checked.
+add_filter(
+	'wp_update_term_parent',
+	function ( $parent, $term_id, $taxonomy ) {
+		if ( 'pressshot_folder' !== $taxonomy || ! is_user_logged_in() ) {
+			return $parent;
+		}
+		$term = get_term( (int) $term_id, 'pressshot_folder' );
+		if ( ! $term instanceof WP_Term ) {
+			return $parent;
+		}
+		return true === pressshot_check_folder_exposure( (int) $term->parent, (int) $parent ) ? $parent : (int) $term->parent;
+	},
+	20,
+	3
+);
 
 function pressshot_link_new_token() {
 	$chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
