@@ -336,6 +336,13 @@ function pressshot_share_folder_html( array $view, $page_url, array $attributes 
 		$href = esc_url( add_query_arg( 'shot', $shot['id'], $page_url ) );
 		if ( $shot['mediaUrl'] && 'screenshot' === $shot['kind'] ) {
 			$thumb = sprintf( '<img src="%s" alt="" loading="lazy">', esc_url( pressshot_share_media_url( add_query_arg( 'size', 'medium', $shot['mediaUrl'] ) ) ) );
+		} elseif ( ! empty( $shot['posterUrl'] ) ) {
+			// The still sits over the Recording tile, which shows again if the still fails to load.
+			$thumb = sprintf(
+				'<span class="pressshot-share__recording"><span class="pressshot-share__placeholder">%s</span><img class="pressshot-share__poster" src="%s" alt="" loading="lazy" onerror="this.remove()"><span class="pressshot-share__play" aria-hidden="true"></span></span>',
+				esc_html__( 'Recording', 'pressshot' ),
+				esc_url( pressshot_share_media_url( $shot['posterUrl'] ) )
+			);
 		} else {
 			$thumb = '<span class="pressshot-share__placeholder">' . esc_html__( 'Recording', 'pressshot' ) . '</span>';
 		}

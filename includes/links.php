@@ -407,6 +407,7 @@ function pressshot_public_shot( $id, $token ) {
 		'videopressGuid' => $guid,
 		'mediaUrl'       => $local ? $base : null,
 		'downloadUrl'    => $local ? add_query_arg( 'download', '1', $base ) : null,
+		'posterUrl'      => $guid && pressshot_videopress_poster( $id ) ? rest_url( 'pressshot/v1/links/' . $token . '/shots/' . $id . '/poster' ) : null,
 	);
 }
 
@@ -509,6 +510,24 @@ function pressshot_get_link_media( WP_REST_Request $request ) {
 	return pressshot_link_private_response( $response );
 }
 
+/**
+ * Anonymous: sends a visitor to a recording's VideoPress still when the link covers it. The pass is
+ * minted only here, per image request, so a revoked or expired link gets the one 404 and no pass.
+ */
+function pressshot_get_link_poster( WP_REST_Request $request ) {
+	$link    = pressshot_link_resolve( (string) $request['token'] );
+	$shot_id = (int) $request['shot'];
+	if ( ! $link || ! ctype_digit( (string) $request['shot'] ) || ! pressshot_link_covers_shot( $link, $shot_id ) ) {
+		return pressshot_link_private_response( pressshot_link_unavailable() );
+	}
+	$guid   = pressshot_videopress_guid( $shot_id );
+	$poster = $guid ? pressshot_videopress_poster( $shot_id ) : null;
+	if ( ! $poster ) {
+		return pressshot_link_private_response( pressshot_link_unavailable() );
+	}
+	return pressshot_link_private_response( pressshot_poster_redirect( $guid, $poster ) );
+}
+
 add_action(
 	'rest_api_init',
 	function () {
@@ -562,6 +581,15 @@ add_action(
 				'callback'            => 'pressshot_get_link_media',
 				'permission_callback' => '__return_true',
 				// Deliberately no args: the router must not reject a bad size or download value. Any size but "medium" is the full file, and every failure is our one 404.
+			)
+		);
+		register_rest_route(
+			$ns,
+			'/links/(?P<token>[^/]+)/shots/(?P<shot>[^/]+)/poster',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => 'pressshot_get_link_poster',
+				'permission_callback' => '__return_true',
 			)
 		);
 	}

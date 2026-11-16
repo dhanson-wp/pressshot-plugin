@@ -172,4 +172,35 @@ wp_set_current_user( $reader );
 $check( 'poster: a subscriber is refused', 403 === $call( 'GET', "/pressshot/v1/shots/$fresh/poster" )->get_status() );
 wp_set_current_user( 0 );
 $check( 'poster: signed out is refused', in_array( $call( 'GET', "/pressshot/v1/shots/$fresh/poster" )->get_status(), array( 401, 403 ), true ) );
+
+// Folder share pages: recording tiles show the still through a route the link guards.
+wp_set_current_user( 0 );
+$pfolder = wp_insert_term( 'Poster folder ' . wp_generate_password( 5, false ), 'pressshot_folder' );
+$pfid    = (int) $pfolder['term_id'];
+wp_set_object_terms( $fresh, array( $pfid ), 'pressshot_folder' );
+wp_set_object_terms( $local, array( $pfid ), 'pressshot_folder' );
+$plink  = pressshot_link_create( 'folder', $pfid );
+$ptoken = $plink['token'];
+$proute = "/pressshot/v1/links/$ptoken/shots/$fresh/poster";
+$passes = array();
+$html   = $render( $ptoken );
+$check( 'share poster: the folder tile shows the still', false !== strpos( $html, 'src="' . esc_url( rest_url( ltrim( $proute, '/' ) ) ) . '"' ) );
+$check( 'share poster: the tile keeps the Recording fallback and a play badge', 2 === substr_count( $html, 'pressshot-share__placeholder' ) && 1 === substr_count( $html, 'pressshot-share__play' ) );
+$check( 'share poster: a local recording gets no still', 1 === substr_count( $html, '/poster' ) );
+$check( 'share poster: rendering the page still mints nothing', array() === $passes );
+$viewed = array_column( $call( 'GET', "/pressshot/v1/links/$ptoken" )->get_data()['shots'], 'posterUrl', 'id' );
+$check( 'share poster: the link view carries the poster route', rest_url( ltrim( $proute, '/' ) ) === ( $viewed[ $fresh ] ?? null ) && array_key_exists( $local, $viewed ) && null === $viewed[ $local ] );
+
+$r = $call( 'GET', $proute );
+$check( 'share poster: a live link redirects to the still with a pass', 302 === $r->get_status() && 'https://videos.files.wordpress.com/GuIdAaa1/clip_mp4_hd.original.jpg?metadata_token=pass-for-GuIdAaa1' === ( $r->get_headers()['Location'] ?? '' ) );
+$check( 'share poster: the redirect is never cached or indexed', 'private, no-store' === ( $r->get_headers()['Cache-Control'] ?? '' ) && 'noindex' === ( $r->get_headers()['X-Robots-Tag'] ?? '' ) );
+$check( 'share poster: a recording without a still is 404', 404 === $call( 'GET', "/pressshot/v1/links/$ptoken/shots/$local/poster" )->get_status() );
+$check( 'share poster: a shot outside the folder is 404', 404 === $call( 'GET', "/pressshot/v1/links/$ptoken/shots/$only_poster/poster" )->get_status() );
+$check( 'share poster: a bad token is 404', 404 === $call( 'GET', "/pressshot/v1/links/nope/shots/$fresh/poster" )->get_status() );
+$single = pressshot_link_create( 'shot', $fresh );
+$check( 'share poster: a single-shot link covers its shot', 302 === $call( 'GET', "/pressshot/v1/links/{$single['token']}/shots/$fresh/poster" )->get_status() );
+pressshot_link_revoke( 'folder', $pfid );
+$passes = array();
+$check( 'share poster: a revoked link is 404 and mints nothing', 404 === $call( 'GET', $proute )->get_status() && array() === $passes );
+wp_delete_term( $pfid, 'pressshot_folder' );
 remove_filter( 'pressshot_videopress_pass', $mint, 10 );

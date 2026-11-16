@@ -124,6 +124,18 @@ function pressshot_videopress_poster( $id ) {
 	return 0 === strpos( $url, 'https://' ) && in_array( $host, array( 'videos.files.wordpress.com', 'videos.videopress.com' ), true ) ? $url : null;
 }
 
+/**
+ * A redirect to a recording's still, signed with a fresh viewing pass when the site can mint one.
+ * Callers decide first that the viewer may see it (Library access, or a live share link).
+ */
+function pressshot_poster_redirect( $guid, $poster ) {
+	$pass     = pressshot_videopress_pass( $guid );
+	$response = new WP_REST_Response( null, 302 );
+	$response->header( 'Location', $pass ? add_query_arg( 'metadata_token', rawurlencode( $pass ), $poster ) : $poster );
+	$response->header( 'Cache-Control', 'private, no-store' );
+	return $response;
+}
+
 /** True for a video that lives only on VideoPress: it has no local file to stream. */
 function pressshot_is_videopress_only( $id ) {
 	if ( 0 !== strpos( (string) get_post_mime_type( $id ), 'video/' ) ) {

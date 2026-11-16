@@ -182,11 +182,7 @@ function pressshot_get_shot_poster( WP_REST_Request $request ) {
 	if ( ! $poster ) {
 		return pressshot_not_a_shot();
 	}
-	$pass     = pressshot_videopress_pass( $guid );
-	$response = new WP_REST_Response( null, 302 );
-	$response->header( 'Location', $pass ? add_query_arg( 'metadata_token', rawurlencode( $pass ), $poster ) : $poster );
-	$response->header( 'Cache-Control', 'private, no-store' );
-	return $response;
+	return pressshot_poster_redirect( $guid, $poster );
 }
 
 /** Trashed shots stream too, so the Trash view can show previews. */
