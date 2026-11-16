@@ -507,7 +507,24 @@ function pressshot_get_link_media( WP_REST_Request $request ) {
 	if ( is_wp_error( $response ) && 404 === ( $response->get_error_data()['status'] ?? 0 ) ) {
 		$response = pressshot_link_unavailable();
 	}
+	if ( $response instanceof PressShot_Media_Response ) {
+		$response->limit_time( pressshot_link_media_time_limit( (string) ( $response->get_headers()['Content-Type'] ?? '' ) ) );
+	}
 	return pressshot_link_private_response( $response );
+}
+
+/** How long a share link's image may take to send, in seconds, before PHP gives up on the client. */
+const PRESSSHOT_LINK_IMAGE_TIME_LIMIT = 30;
+
+/**
+ * The time cap for streaming a share link's media to anyone who has the link, signed in or not.
+ * Images get PRESSSHOT_LINK_IMAGE_TIME_LIMIT, which is plenty for a screenshot and stops a slow
+ * client from holding a PHP worker. Recordings stay uncapped (0) for now, since a long one can
+ * rightly take minutes. The pressshot_link_media_time_limit filter can change either.
+ */
+function pressshot_link_media_time_limit( $mime ) {
+	$seconds = 0 === strpos( $mime, 'image/' ) ? PRESSSHOT_LINK_IMAGE_TIME_LIMIT : 0;
+	return max( 0, (int) apply_filters( 'pressshot_link_media_time_limit', $seconds, $mime ) );
 }
 
 /**

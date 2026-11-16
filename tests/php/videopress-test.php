@@ -7,10 +7,17 @@
  */
 require __DIR__ . '/harness.php';
 
+$test_guids = array( 'GuIdAaa1', 'GuIdPst1', 'GuIdCch1', 'GuIdJwt1', 'GuIdJwt2' );
+foreach ( $test_guids as $guid ) {
+	pressshot_videopress_pass_forget( $guid );
+}
 register_shutdown_function(
-	function () {
+	function () use ( $test_guids ) {
 		foreach ( $GLOBALS['pressshot_test_made']['attachments'] as $id ) {
 			pressshot_link_revoke( 'shot', $id );
+		}
+		foreach ( $test_guids as $guid ) {
+			pressshot_videopress_pass_forget( $guid );
 		}
 	}
 );
@@ -97,6 +104,7 @@ $check( 'pass: a subscriber is refused', 403 === $call( 'GET', "/pressshot/v1/sh
 wp_set_current_user( 0 );
 $check( 'pass: signed out is refused', in_array( $call( 'GET', "/pressshot/v1/shots/$fresh/videopress-pass" )->get_status(), array( 401, 403 ), true ) );
 remove_filter( 'pressshot_videopress_pass', $mint, 10 );
+pressshot_videopress_pass_forget( 'GuIdAaa1' );
 wp_set_current_user( $b );
 $none = $call( 'GET', "/pressshot/v1/shots/$fresh/videopress-pass" );
 $check( 'pass: without Jetpack the pass is null, not an error', 200 === $none->get_status() && null === $none->get_data()['pass'] );
@@ -115,6 +123,7 @@ $html   = $render( $link['token'] );
 $check( 'share: the player frame carries the pass', false !== strpos( $html, 'data-pressshot-pass="pass-for-GuIdAaa1"' ) && false !== strpos( $html, 'videopress.com/embed/GuIdAaa1' ) );
 $check( 'share: the page loads the pass handoff script', wp_script_is( 'pressshot-videopress-pass', 'enqueued' ) );
 pressshot_link_revoke( 'shot', $fresh );
+pressshot_videopress_pass_forget( 'GuIdAaa1' );
 $passes = array();
 $html   = $render( $link['token'] );
 $check( 'share: a revoked link mints no pass', array() === $passes && false === strpos( $html, 'pass-for-' ) && false !== strpos( $html, 'This link is no longer available.' ) );
@@ -165,6 +174,7 @@ $check( 'poster: the route redirects to the still with a pass', 302 === $r->get_
 $check( 'poster: the redirect is never cached', 'private, no-store' === ( $r->get_headers()['Cache-Control'] ?? '' ) );
 $check( 'poster: no poster is 404', 404 === $call( 'GET', "/pressshot/v1/shots/$local/poster" )->get_status() );
 remove_filter( 'pressshot_videopress_pass', $mint, 10 );
+pressshot_videopress_pass_forget( 'GuIdAaa1' );
 $r = $call( 'GET', "/pressshot/v1/shots/$fresh/poster" );
 $check( 'poster: without a pass it redirects to the plain still', 302 === $r->get_status() && 'https://videos.files.wordpress.com/GuIdAaa1/clip_mp4_hd.original.jpg' === ( $r->get_headers()['Location'] ?? '' ) );
 add_filter( 'pressshot_videopress_pass', $mint, 10, 2 );
@@ -200,7 +210,71 @@ $check( 'share poster: a bad token is 404', 404 === $call( 'GET', "/pressshot/v1
 $single = pressshot_link_create( 'shot', $fresh );
 $check( 'share poster: a single-shot link covers its shot', 302 === $call( 'GET', "/pressshot/v1/links/{$single['token']}/shots/$fresh/poster" )->get_status() );
 pressshot_link_revoke( 'folder', $pfid );
+pressshot_videopress_pass_forget( 'GuIdAaa1' );
 $passes = array();
-$check( 'share poster: a revoked link is 404 and mints nothing', 404 === $call( 'GET', $proute )->get_status() && array() === $passes );
+$r      = $call( 'GET', $proute );
+$check( 'share poster: a revoked link is 404 and mints nothing', 404 === $r->get_status() && array() === $passes && ! isset( $r->get_headers()['Location'] ) );
 wp_delete_term( $pfid, 'pressshot_folder' );
+
+// Reusing passes: signed-out poster and player views shouldn't each ask WordPress.com for a new one.
+pressshot_videopress_pass_forget( 'GuIdAaa1' );
+$passes = array();
+$first  = pressshot_videopress_pass( 'GuIdCch1' );
+$second = pressshot_videopress_pass( 'GuIdCch1' );
+$check( 'cache: a second request for the same video reuses the pass', 'pass-for-GuIdCch1' === $first && $first === $second && array( 'GuIdCch1' ) === $passes );
+pressshot_videopress_pass( 'GuIdAaa1' );
+$check( 'cache: each video gets its own pass', array( 'GuIdCch1', 'GuIdAaa1' ) === $passes );
+$cached = get_transient( 'pressshot_vp_pass_GuIdCch1' );
+$check( 'cache: an opaque pass is reused for at most the reuse window', is_array( $cached ) && $cached['until'] <= time() + PRESSSHOT_VIDEOPRESS_PASS_REUSE && $cached['until'] > time() );
+set_transient( 'pressshot_vp_pass_GuIdCch1', array( 'pass' => 'stale', 'until' => time() - 1 ), 60 );
+$passes = array();
+$check( 'cache: a pass past its window is minted again', 'pass-for-GuIdCch1' === pressshot_videopress_pass( 'GuIdCch1' ) && array( 'GuIdCch1' ) === $passes );
+
+$single = pressshot_link_create( 'shot', $fresh );
+$route  = "/pressshot/v1/links/{$single['token']}/shots/$fresh/poster";
+pressshot_videopress_pass_forget( 'GuIdAaa1' );
+$passes = array();
+$views  = array();
+for ( $i = 0; $i < 5; $i++ ) {
+	$views[] = $call( 'GET', $route )->get_headers()['Location'] ?? '';
+}
+$check( 'cache: five signed-out poster views mint one pass', array( 'GuIdAaa1' ) === $passes && 1 === count( array_unique( $views ) ) && false !== strpos( $views[0], 'metadata_token=pass-for-GuIdAaa1' ) );
+$html = $render( $single['token'] );
+$check( 'cache: the share player reuses the same pass', array( 'GuIdAaa1' ) === $passes && false !== strpos( $html, 'data-pressshot-pass="pass-for-GuIdAaa1"' ) );
+pressshot_link_revoke( 'shot', $fresh );
+$r    = $call( 'GET', $route );
+$html = $render( $single['token'] );
+$check( 'cache: a revoked link gets no pass even while one is cached', is_array( get_transient( 'pressshot_vp_pass_GuIdAaa1' ) ) && 404 === $r->get_status() && ! isset( $r->get_headers()['Location'] ) && false === strpos( $html, 'pass-for-' ) );
+$expiring = pressshot_link_create( 'shot', $fresh, time() + 2 );
+$check( 'cache: a link about to expire still gets the cached pass', 302 === $call( 'GET', "/pressshot/v1/links/{$expiring['token']}/shots/$fresh/poster" )->get_status() );
+update_post_meta( pressshot_link_post_ids( 'shot', $fresh )[0], '_pressshot_link_expires', time() - 1 );
+$r = $call( 'GET', "/pressshot/v1/links/{$expiring['token']}/shots/$fresh/poster" );
+$check( 'cache: an expired link gets no pass even while one is cached', 404 === $r->get_status() && ! isset( $r->get_headers()['Location'] ) );
+pressshot_link_revoke( 'shot', $fresh );
 remove_filter( 'pressshot_videopress_pass', $mint, 10 );
+
+// A JWT pass is never reused past a margin before its own expiry.
+$jwt = function ( $exp ) {
+	$part = function ( $data ) {
+		return rtrim( strtr( base64_encode( wp_json_encode( $data ) ), '+/', '-_' ), '=' );
+	};
+	return $part( array( 'alg' => 'HS256' ) ) . '.' . $part( array( 'exp' => $exp ) ) . '.sig';
+};
+$check( 'ttl: an opaque pass gets the reuse window', PRESSSHOT_VIDEOPRESS_PASS_REUSE === pressshot_videopress_pass_ttl( 'opaque-pass' ) );
+$check( 'ttl: a long-lived JWT gets the reuse window', PRESSSHOT_VIDEOPRESS_PASS_REUSE === pressshot_videopress_pass_ttl( $jwt( time() + DAY_IN_SECONDS ) ) );
+$check( 'ttl: a JWT that expires soon is reused only until the margin', abs( 60 - pressshot_videopress_pass_ttl( $jwt( time() + PRESSSHOT_VIDEOPRESS_PASS_MARGIN + 60 ) ) ) <= 1 );
+$check( 'ttl: a JWT inside the margin isn\'t reused', 0 === pressshot_videopress_pass_ttl( $jwt( time() + 30 ) ) );
+$short = function () use ( $jwt ) {
+	return $jwt( time() + 30 );
+};
+add_filter( 'pressshot_videopress_pass', $short );
+pressshot_videopress_pass( 'GuIdJwt1' );
+$check( 'ttl: a pass inside the margin is handed out but not cached', false === get_transient( 'pressshot_vp_pass_GuIdJwt1' ) );
+remove_filter( 'pressshot_videopress_pass', $short );
+$long = function () use ( $jwt ) {
+	return $jwt( time() + HOUR_IN_SECONDS );
+};
+add_filter( 'pressshot_videopress_pass', $long );
+pressshot_videopress_pass( 'GuIdJwt2' );
+$check( 'ttl: a long-lived JWT is cached', is_array( get_transient( 'pressshot_vp_pass_GuIdJwt2' ) ) );
+remove_filter( 'pressshot_videopress_pass', $long );

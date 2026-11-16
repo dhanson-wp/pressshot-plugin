@@ -96,6 +96,42 @@ $check( 'link JSON failure is private and noindex', 'private, no-store' === $unk
 $check( 'media failure is private and noindex', 'private, no-store' === $bad_size->get_headers()['Cache-Control'] && 'noindex' === $bad_size->get_headers()['X-Robots-Tag'] );
 $check( 'media success is no-store and noindex', false !== strpos( $bogus->get_headers()['Cache-Control'], 'no-store' ) && 'noindex' === $bogus->get_headers()['X-Robots-Tag'] );
 
+// Streaming is bounded: a slow client can't hold a PHP worker for a shared image.
+$check( 'a shared image streams with the image time cap', $bogus instanceof PressShot_Media_Response && PRESSSHOT_LINK_IMAGE_TIME_LIMIT === $bogus->time_limit() && PRESSSHOT_LINK_IMAGE_TIME_LIMIT > 0 );
+$recording = $make_shot( $uploader, 'video/mp4' );
+$rlink     = pressshot_link_create( 'shot', $recording );
+$rmedia    = $call( 'GET', "/pressshot/v1/links/{$rlink['token']}/shots/$recording/media" );
+$check( 'a shared recording stays uncapped', $rmedia instanceof PressShot_Media_Response && 0 === $rmedia->time_limit() );
+$cap = function ( $seconds, $mime ) {
+	return 'video/mp4' === $mime ? 600 : 5;
+};
+add_filter( 'pressshot_link_media_time_limit', $cap, 10, 2 );
+$check( 'the cap can be changed per type with a filter', 5 === $call( 'GET', $media )->time_limit() && 600 === $call( 'GET', "/pressshot/v1/links/{$rlink['token']}/shots/$recording/media" )->time_limit() );
+remove_filter( 'pressshot_link_media_time_limit', $cap, 10 );
+pressshot_link_revoke( 'shot', $recording );
+wp_set_current_user( $uploader );
+$check( 'the signed-in Library route keeps its uncapped stream', 0 === $call( 'GET', "/pressshot/v1/shots/$shot/media" )->time_limit() );
+wp_set_current_user( 0 );
+
+if ( ! class_exists( 'PressShot_Test_Clock_Response' ) ) {
+	/** A media response whose clock moves one second every time emit() looks at it. */
+	class PressShot_Test_Clock_Response extends PressShot_Media_Response {
+		public $ticks = 0;
+		protected function now() {
+			return (float) $this->ticks++;
+		}
+	}
+}
+$big = fopen( 'php://temp', 'w+b' );
+fwrite( $big, str_repeat( 'x', 65536 * 10 ) );
+$slow = new PressShot_Test_Clock_Response( $big, 'image/png', 65536 * 10, 0, 65536 * 10 - 1, false, false );
+$slow->limit_time( 3 );
+$check( 'a capped stream stops at the deadline', 65536 * 2 === strlen( $emit( $slow ) ) );
+$all = fopen( 'php://temp', 'w+b' );
+fwrite( $all, str_repeat( 'x', 65536 * 10 ) );
+$full = new PressShot_Test_Clock_Response( $all, 'image/png', 65536 * 10, 0, 65536 * 10 - 1, false, false );
+$check( 'an uncapped stream sends everything', 65536 * 10 === strlen( $emit( $full ) ) );
+
 // Shot share page.
 $html = $render( $token );
 $check( 'shot page shows the title', false !== strpos( $html, 'Quarterly chart ' . $tag ) );
