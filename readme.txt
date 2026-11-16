@@ -3,7 +3,7 @@ Tags: screenshots, screen recording, media library, sharing, team
 Requires at least: 7.1
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.0.1
+Stable tag: 1.0.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -70,6 +70,9 @@ We're still checking. Revoking a link closes its share page. Whether it also sto
 No. It works on self-hosted WordPress and on WordPress.com plans that allow plugins.
 
 == Changelog ==
+
+= 1.0.2 =
+* Recordings on shared folder pages show their VideoPress poster instead of a plain tile.
 
 = 1.0.1 =
 * Recordings in the Library show their VideoPress poster instead of an empty tile.
