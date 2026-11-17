@@ -14,6 +14,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 class PressShot_Media_Response extends WP_REST_Response {
 	private $stream;
 	private $length;
+	/** The most seconds emit() may run, or 0 for no limit. See limit_time(). */
+	private $time_limit = 0;
 
 	/**
 	 * @param string|false $download The download file name, or false to show the file inline.
@@ -40,12 +42,36 @@ class PressShot_Media_Response extends WP_REST_Response {
 		parent::__construct( null, $partial ? 206 : 200, $headers );
 	}
 
+	/**
+	 * Caps how long emit() may run, in wall-clock seconds, so one slow client can't hold a PHP worker
+	 * for as long as it likes. A response that hits the cap stops short and the client sees a
+	 * truncated body. 0 (the default) means no cap.
+	 */
+	public function limit_time( $seconds ) {
+		$this->time_limit = max( 0, (int) $seconds );
+		return $this;
+	}
+
+	public function time_limit() {
+		return $this->time_limit;
+	}
+
+	/** The clock emit() checks against its time limit. Tests override it. */
+	protected function now() {
+		return microtime( true );
+	}
+
 	public function emit( $method ) {
 		if ( 'HEAD' === $method ) {
 			return;
 		}
-		$left = $this->length;
+		$deadline = $this->time_limit > 0 ? $this->now() + $this->time_limit : 0;
+		$left     = $this->length;
 		while ( $left > 0 && ! feof( $this->stream ) ) {
+			// Wall-clock, not PHP's time limit: on most hosts that counts CPU time, not time spent waiting on a slow client.
+			if ( $deadline && $this->now() >= $deadline ) {
+				break;
+			}
 			$chunk = fread( $this->stream, min( 65536, $left ) );
 			if ( false === $chunk || '' === $chunk ) {
 				break;
@@ -54,20 +80,25 @@ class PressShot_Media_Response extends WP_REST_Response {
 			$left -= strlen( $chunk );
 			// Send each chunk on, so a long recording never sits whole in memory or a buffer.
 			flush();
+			if ( connection_aborted() ) {
+				break;
+			}
 		}
 	}
 
 	/**
-	 * Gets PHP ready to stream a large file: drops output buffers (so the file isn't held in memory
-	 * and nothing stray is prepended) and lifts the time limit where the host allows it. The serve
-	 * filter calls this right before emit(); tests call emit() alone and keep their own buffer.
+	 * Gets PHP ready to stream the file: drops output buffers (so the file isn't held in memory and
+	 * nothing stray is prepended) and sets PHP's own time limit where the host allows it. A response
+	 * with no cap (a long recording) lifts the limit; a capped one gets the cap plus a few seconds,
+	 * as a backstop to the wall-clock check in emit(). The serve filter calls this right before
+	 * emit(); tests call emit() alone and keep their own buffer.
 	 */
-	public static function prepare_output() {
+	public function prepare_output() {
 		while ( ob_get_level() > 0 ) {
 			ob_end_clean();
 		}
 		if ( function_exists( 'set_time_limit' ) ) {
-			@set_time_limit( 0 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Some hosts disable it.
+			@set_time_limit( $this->time_limit > 0 ? $this->time_limit + 5 : 0 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Some hosts disable it.
 		}
 	}
 
@@ -88,15 +119,30 @@ function pressshot_videopress_guid( $id ) {
 	return $guid ? (string) $guid : null;
 }
 
+/** How long a minted viewing pass is reused for the same video, in seconds, at most. */
+const PRESSSHOT_VIDEOPRESS_PASS_REUSE = 300;
+
+/** A cached pass is dropped this many seconds before it expires, so the one handed out still has time to load. */
+const PRESSSHOT_VIDEOPRESS_PASS_MARGIN = 120;
+
 /**
  * A short-lived VideoPress viewing pass for one video, or null. Private VideoPress videos (every video
  * on a private site) only play with one. Jetpack mints it in the site's name, so callers must decide
  * first that the viewer may watch: the Library checks site access, share pages check the link.
  * The pressshot_videopress_pass filter can supply one (tests, or sites without Jetpack).
+ *
+ * Minting asks WordPress.com over the network, so a pass is reused for the same video for a few
+ * minutes (see pressshot_videopress_pass_ttl) instead of minted for every poster and player view.
+ * The cache sits behind the callers' checks, so a revoked or expired link still gets no pass.
  */
 function pressshot_videopress_pass( $guid ) {
 	if ( ! is_string( $guid ) || 1 !== preg_match( '/^[A-Za-z0-9]{8}$/', $guid ) ) {
 		return null;
+	}
+	$key    = 'pressshot_vp_pass_' . $guid;
+	$cached = get_transient( $key );
+	if ( is_array( $cached ) && isset( $cached['pass'], $cached['until'] ) && is_string( $cached['pass'] ) && time() < (int) $cached['until'] ) {
+		return $cached['pass'];
 	}
 	$pass = apply_filters( 'pressshot_videopress_pass', null, $guid );
 	if ( null === $pass && class_exists( 'Automattic\\Jetpack\\VideoPress\\VideoPressToken' ) ) {
@@ -106,7 +152,38 @@ function pressshot_videopress_pass( $guid ) {
 			$pass = null;
 		}
 	}
-	return is_string( $pass ) && '' !== $pass ? $pass : null;
+	if ( ! is_string( $pass ) || '' === $pass ) {
+		return null;
+	}
+	$ttl = pressshot_videopress_pass_ttl( $pass );
+	if ( $ttl > 0 ) {
+		set_transient( $key, array( 'pass' => $pass, 'until' => time() + $ttl ), $ttl );
+	}
+	return $pass;
+}
+
+/**
+ * How long a freshly minted pass may be reused, in seconds: PRESSSHOT_VIDEOPRESS_PASS_REUSE at most,
+ * and never past PRESSSHOT_VIDEOPRESS_PASS_MARGIN before the pass's own expiry when it is a JWT that
+ * says when it expires. 0 means don't reuse it.
+ */
+function pressshot_videopress_pass_ttl( $pass ) {
+	$ttl   = PRESSSHOT_VIDEOPRESS_PASS_REUSE;
+	$parts = explode( '.', $pass );
+	if ( 3 === count( $parts ) ) {
+		$claims = json_decode( (string) base64_decode( strtr( $parts[1], '-_', '+/' ) ), true );
+		if ( is_array( $claims ) && isset( $claims['exp'] ) && is_numeric( $claims['exp'] ) ) {
+			$ttl = min( $ttl, (int) $claims['exp'] - time() - PRESSSHOT_VIDEOPRESS_PASS_MARGIN );
+		}
+	}
+	return max( 0, $ttl );
+}
+
+/** Drops a video's cached viewing pass, so the next request mints a new one. */
+function pressshot_videopress_pass_forget( $guid ) {
+	if ( is_string( $guid ) && 1 === preg_match( '/^[A-Za-z0-9]{8}$/', $guid ) ) {
+		delete_transient( 'pressshot_vp_pass_' . $guid );
+	}
 }
 
 /**
@@ -216,7 +293,7 @@ add_filter(
 	'rest_pre_serve_request',
 	function ( $served, $response, $request ) {
 		if ( ! $served && $response instanceof PressShot_Media_Response ) {
-			PressShot_Media_Response::prepare_output();
+			$response->prepare_output();
 			$response->emit( $request->get_method() );
 			return true;
 		}
