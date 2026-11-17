@@ -120,6 +120,17 @@ function pressshot_delete_folder( WP_REST_Request $request ) {
 		)
 	);
 	$children = is_wp_error( $children ) ? array() : $children;
+	// Moving the contents somewhere a live link covers shares them, so it takes what sharing takes.
+	if ( $children ) {
+		$exposure = pressshot_check_folder_exposure( $folder->term_id, $target );
+		if ( is_wp_error( $exposure ) ) {
+			return $exposure;
+		}
+	}
+	$exposure = pressshot_check_shot_exposure( pressshot_shots_in_folders( array( $folder->term_id ) ), $target );
+	if ( is_wp_error( $exposure ) ) {
+		return $exposure;
+	}
 	// A folder can't sit beside another with the same name. Check first so nothing changes if one would.
 	foreach ( $children as $child ) {
 		$clash = get_terms(

@@ -6,7 +6,9 @@
  * beside each item in the Media Library, and travel with an export. The Library reads and changes
  * them through WordPress's standard REST routes (/wp/v2/pressshot-folders, /wp/v2/pressshot-tags, and
  * the same-named fields on /wp/v2/media). Nothing here is tied to one person: anyone who can upload
- * to the site can create, rename, and remove them, and file any shot.
+ * to the site can create, rename, and remove them, and file any shot. The exception is a folder a
+ * live share link covers: filing a shot there, or moving a folder under it, shares it, so that takes
+ * the permission the link itself takes (see pressshot_check_shot_exposure() in links.php).
  *
  * Folders nest (a folder can have a parent); tags stay flat. Deleting a folder, with the choice of
  * moving its contents or removing everything in it, is in folders.php.

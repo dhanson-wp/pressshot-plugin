@@ -45,11 +45,37 @@ const ORGANIZE_LIMIT = 100;
  */
 async function organizeAll( ids, change ) {
 	for ( let start = 0; start < ids.length; start += ORGANIZE_LIMIT ) {
-		await organizeShots(
-			ids.slice( start, start + ORGANIZE_LIMIT ),
-			change
-		);
+		try {
+			await organizeShots(
+				ids.slice( start, start + ORGANIZE_LIMIT ),
+				change
+			);
+		} catch ( err ) {
+			// Earlier batches already went through, so the caller knows to refresh.
+			if ( err && typeof err === 'object' ) {
+				err.organizedCount = start;
+			}
+			throw err;
+		}
 	}
+}
+
+/**
+ * The message for a failed move. A folder with a share link refuses shots the person can't share
+ * themselves, and the server says which folder; this adds what to do about it.
+ *
+ * @param {Object} err      The api-fetch error.
+ * @param {string} fallback Message when the error has none.
+ * @return {string} Message to show.
+ */
+export function moveErrorMessage( err, fallback ) {
+	if ( err?.code === 'pressshot_link_exposure' && err.message ) {
+		return `${ err.message } ${ __(
+			'Pick another folder, or ask someone who can share them to file them there.',
+			'pressshot'
+		) }`;
+	}
+	return errorMessage( err, fallback );
 }
 
 const hasLiveLink = ( shot ) =>
@@ -104,11 +130,14 @@ function MoveDialog( { items, closeModal } ) {
 		} catch ( err ) {
 			setIsBusy( false );
 			setError(
-				errorMessage(
+				moveErrorMessage(
 					err,
 					__( 'The shots couldn’t be moved.', 'pressshot' )
 				)
 			);
+			if ( err?.organizedCount ) {
+				onChange();
+			}
 			return;
 		}
 		const name = folders.find( ( folder ) => folder.id === target )?.name;

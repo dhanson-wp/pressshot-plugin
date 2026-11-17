@@ -289,16 +289,24 @@ function DeleteFolderDialog( { folder, onClose, onDeleted } ) {
 			onClose();
 		} catch ( err ) {
 			setIsBusy( false );
+			let message;
+			if ( err?.code === 'pressshot_folder_not_yours' ) {
+				message = __(
+					'This folder holds shots you can’t delete. Move them instead.',
+					'pressshot'
+				);
+			} else if ( err?.code === 'pressshot_link_exposure' ) {
+				message = `${ errorMessage( err, '' ) } ${ __(
+					'Pick another folder for what’s inside.',
+					'pressshot'
+				) }`;
+			}
 			setError(
-				err?.code === 'pressshot_folder_not_yours'
-					? __(
-							'This folder holds shots you can’t delete. Move them instead.',
-							'pressshot'
-						)
-					: errorMessage(
-							err,
-							__( 'The folder couldn’t be deleted.', 'pressshot' )
-						)
+				message ||
+					errorMessage(
+						err,
+						__( 'The folder couldn’t be deleted.', 'pressshot' )
+					)
 			);
 		}
 	};

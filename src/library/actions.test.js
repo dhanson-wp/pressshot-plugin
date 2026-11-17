@@ -3,7 +3,12 @@ jest.mock( '@wordpress/api-fetch', () => jest.fn( () => Promise.resolve( {} ) ) 
 // package pulls in ES modules Jest can't load.
 jest.mock( '@wordpress/components', () => ( {} ) );
 
-const { needsTypedConfirm, isTypedConfirm, shotActions } = require( './actions' );
+const {
+	needsTypedConfirm,
+	isTypedConfirm,
+	moveErrorMessage,
+	shotActions,
+} = require( './actions' );
 
 const shot = ( overrides = {} ) => ( {
 	id: 1,
@@ -109,5 +114,26 @@ describe( 'shotActions', () => {
 			selectedShots: [ mine, other ],
 		} );
 		expect( eligibleIds( allMine, mine ) ).toContain( 'delete' );
+	} );
+} );
+
+describe( 'moveErrorMessage', () => {
+	it( 'keeps the server\'s reason for a shared folder and adds what to do', () => {
+		const message = moveErrorMessage(
+			{
+				code: 'pressshot_link_exposure',
+				message: '"Launch" has a share link.',
+			},
+			'fallback'
+		);
+		expect( message ).toMatch( /^"Launch" has a share link\. / );
+		expect( message ).toContain( 'Pick another folder' );
+	} );
+
+	it( 'shows other errors as they are, or the fallback', () => {
+		expect(
+			moveErrorMessage( { code: 'other', message: 'Nope.' }, 'fallback' )
+		).toBe( 'Nope.' );
+		expect( moveErrorMessage( {}, 'fallback' ) ).toBe( 'fallback' );
 	} );
 } );
