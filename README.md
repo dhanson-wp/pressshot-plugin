@@ -12,7 +12,7 @@ The PressShot Library for WordPress: shots, folders, tags, share links, and Tras
 - A **shot** is an attachment registered by a capture app. The PressShot Mac app uploads with `POST /wp/v2/media`, then calls `POST /wp-json/pressshot/v1/captures/{id}/register` with `{ "source": "pressshot" }` and gets back `{ id, source, shareUrl }`. Registering sets `_pressshot_capture` and `_pressshot_source`. Allowed sources come from the `pressshot_shot_sources` filter. The full contract is in [docs/shot-marker.md](docs/shot-marker.md).
 - **A team site is shared.** Everyone with `upload_files` sees every shot. Folders (nested) and tags are shared too. There's no manager view and no per-shot privacy. WordPress administrators can see every upload in wp-admin anyway.
 - **A personal site is private** because nobody else is on it.
-- **The files aren't secret.** The plugin hides shots from WordPress's public listings (`/wp/v2/media`, the folder and tag routes, attachment pages, and oEmbed) for anyone without Library access, and its own routes check access on every request. Each file still lives at a normal uploads address that isn't secret: anyone who has the exact address can open it, and revoking a link doesn't change that. Only a private WordPress.com site or server rules protect the files themselves, and a private site also blocks the `/s/` share pages unless you turn on the `pressshot_share_on_private_site` option, after which every live link on the site opens for anyone who has it.
+- **The files aren't secret.** The plugin hides shots from WordPress's public listings (`/wp/v2/media`, the folder and tag routes, attachment pages, and oEmbed) for anyone without Library access, and its own routes check access on every request. Each file still lives at a normal uploads address that isn't secret: anyone who has the exact address can open it, and revoking a link doesn't change that. Only a private WordPress.com site or server rules protect the files themselves, and a private site also blocks the `/s/` share pages unless you turn on **Settings → PressShot → Let share links open while this site is Private** (the `pressshot_share_on_private_site` option), after which every live link on the site opens for anyone who has it. See [Share links from a private WordPress.com site](docs/guides/private-site-sharing.md).
 - **Share links** live at `/s/{token}`, one per shot or folder, with optional expiry and revocation. Shot links need permission to edit that attachment; folder links need Editor or above (`edit_others_posts`). Delete and restore follow `delete_post`.
 - **Trash** keeps deleted shots for 30 days (WordPress's `EMPTY_TRASH_DAYS`). Restoring doesn't bring back old links.
 
@@ -32,6 +32,7 @@ The PressShot Library for WordPress: shots, folders, tags, share links, and Tras
 
 - [Set up a team Library](docs/guides/team-library.md)
 - [Set up your own private Library](docs/guides/private-library.md)
+- [Share links from a private WordPress.com site](docs/guides/private-site-sharing.md)
 
 ## Development
 

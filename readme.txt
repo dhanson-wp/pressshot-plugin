@@ -59,7 +59,7 @@ On a team site, every shot is visible to everyone who can upload, and to site ad
 
 = Are the files themselves private? =
 
-Not on their own. The plugin hides shots from WordPress's public listings, and its own routes check who's asking. But each image or video still lives at a normal uploads address, and that address isn't secret. Anyone who has the exact address can open the file, and revoking a link doesn't change that. Only a private WordPress.com site or server rules that block the uploads folder protect the files themselves. A private site also blocks the `/s/` share pages unless you turn on `pressshot_share_on_private_site`; once it's on, every live link on the site opens for anyone who has it.
+Not on their own. The plugin hides shots from WordPress's public listings, and its own routes check who's asking. But each image or video still lives at a normal uploads address, and that address isn't secret. Anyone who has the exact address can open the file, and revoking a link doesn't change that. Only a private WordPress.com site or server rules that block the uploads folder protect the files themselves. A private site also blocks the `/s/` share pages unless an administrator turns on **Settings → PressShot → Let share links open while this site is Private**; once it's on, every live link on the site opens for anyone who has it. The guide [Share links from a private WordPress.com site](https://github.com/dhanson-wp/pressshot-plugin/blob/main/docs/guides/private-site-sharing.md) explains when to turn it on and which links to revoke first.
 
 = Does revoking a link stop a VideoPress video? =
 
@@ -72,7 +72,8 @@ No. It works on self-hosted WordPress and on WordPress.com plans that allow plug
 == Changelog ==
 
 = 1.0.3 =
-* A WordPress.com site set to Private can let share links open for signed-out visitors. It's off until you turn it on (`wp option update pressshot_share_on_private_site 1`, or the `pressshot_share_on_private_site` filter). Only a live link's page and media get through, the page is shown without the theme's header and footer, and revoked, expired, and unknown links still see the site's private screen.
+* A WordPress.com site set to Private can let share links open for signed-out visitors. It's off until an administrator turns it on in **Settings → PressShot**, which shows up only while the site is Private (or with `wp option update pressshot_share_on_private_site 1`; the `pressshot_share_on_private_site` filter wins over both). Only a live link's page and media get through, the page is shown without the theme's header and footer, and revoked, expired, and unknown links still see the site's private screen.
+* The REST index (`/wp-json/`) has a `pressshot` object saying whether the site is Private and whether share links open on it, for the Mac app to read.
 
 = 1.0.2 =
 * Recordings on shared folder pages show their VideoPress poster instead of a plain tile.

@@ -40,6 +40,8 @@ require_once __DIR__ . '/includes/public-surface.php';
 
 require_once __DIR__ . '/includes/private-site.php';
 
+require_once __DIR__ . '/includes/settings.php';
+
 register_activation_hook( __FILE__, 'pressshot_share_activate' );
 
 register_deactivation_hook( __FILE__, 'pressshot_share_deactivate' );
