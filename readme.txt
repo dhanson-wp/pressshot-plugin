@@ -3,7 +3,7 @@ Tags: screenshots, screen recording, media library, sharing, team
 Requires at least: 7.1
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.0.3
+Stable tag: 1.0.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -71,9 +71,16 @@ No. It works on self-hosted WordPress and on WordPress.com plans that allow plug
 
 == Changelog ==
 
-= 1.0.3 =
-* A WordPress.com site set to Private can let share links open for signed-out visitors. It's off until an administrator turns it on in **Settings → PressShot**, which shows up only while the site is Private (or with `wp option update pressshot_share_on_private_site 1`; the `pressshot_share_on_private_site` filter wins over both). Only a live link's page and media get through, the page is shown without the theme's header and footer, and revoked, expired, and unknown links still see the site's private screen.
+= 1.0.4 =
+* Settings → PressShot has a checkbox that lets share links open while a WordPress.com site is Private, so an administrator no longer needs WP-CLI. It shows up only while the site is Private, warns that every live link opens at once, and links to the Library so you can revoke links first. When the `pressshot_share_on_private_site` filter decides, the checkbox shows what the site does and can't be changed.
+* A new guide, Share links from a private WordPress.com site, covers when to turn sharing on and what it opens.
 * The REST index (`/wp-json/`) has a `pressshot` object saying whether the site is Private and whether share links open on it, for the Mac app to read.
+* Filing a shot into a folder with a live share link, or moving a folder under one, now takes the same permission making that link does. The Library's Move and Delete folder dialogs say what to do when it's refused. Thanks to Chandler Weiner for finding this.
+* Signed-out views of a shared recording reuse a VideoPress viewing pass for a few minutes instead of asking for a new one every time, and revoked or expired links still get none.
+* Shared images stop streaming after 30 seconds or when the visitor disconnects, so a slow visitor can't tie up the site. Recordings aren't capped, and the `pressshot_link_media_time_limit` filter changes either.
+
+= 1.0.3 =
+* A WordPress.com site set to Private can let share links open for signed-out visitors. It's off until you turn it on (`wp option update pressshot_share_on_private_site 1`, or the `pressshot_share_on_private_site` filter). Only a live link's page and media get through, the page is shown without the theme's header and footer, and revoked, expired, and unknown links still see the site's private screen.
 
 = 1.0.2 =
 * Recordings on shared folder pages show their VideoPress poster instead of a plain tile.
