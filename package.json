@@ -1,6 +1,6 @@
 {
   "name": "pressshot-plugin",
-  "version": "1.0.4",
+  "version": "1.1.0",
   "description": "PressShot Library for WordPress",
   "files": [
     "pressshot.php",

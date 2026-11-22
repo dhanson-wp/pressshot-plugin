@@ -3,7 +3,7 @@ Tags: screenshots, screen recording, media library, sharing, team
 Requires at least: 7.1
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.0.4
+Stable tag: 1.1.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -70,6 +70,12 @@ We're still checking. Revoking a link closes its share page. Whether it also sto
 No. It works on self-hosted WordPress and on WordPress.com plans that allow plugins.
 
 == Changelog ==
+
+= 1.1.0 =
+* Paste a share link into Slack, iMessage, or anywhere else that shows link previews, and the shot itself shows up inline with its name and your site's name. A recording shows its VideoPress still, and a folder link shows the folder's name.
+* Chat apps keep their own copy of a preview once a link is pasted, so stopping sharing ends the link but can't take back a preview someone already saw.
+* Revoked, expired, and unknown links get no preview at all, and share pages still aren't cached or indexed.
+* Share pages turn off Jetpack's and Yoast's own preview tags, so the preview describes the shot instead of the site.
 
 = 1.0.4 =
 * Settings → PressShot has a checkbox that lets share links open while a WordPress.com site is Private, so an administrator no longer needs WP-CLI. It shows up only while the site is Private, warns that every live link opens at once, and links to the Library so you can revoke links first. When the `pressshot_share_on_private_site` filter decides, the checkbox shows what the site does and can't be changed.
