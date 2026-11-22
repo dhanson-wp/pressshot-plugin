@@ -222,6 +222,39 @@ function pressshot_is_videopress_only( $id ) {
 	return (bool) ( get_post_meta( $id, 'videopress_guid', true ) || ! empty( $meta['videopress'] ) );
 }
 
+/** The types the media routes will serve. */
+function pressshot_media_mimes() {
+	return array( 'image/png', 'image/jpeg', 'image/webp', 'image/gif', 'video/mp4', 'video/quicktime' );
+}
+
+/**
+ * The first of $keys that WordPress generated for an image, sits beside the original, and is a type
+ * the media routes serve: array( 'file', 'mime', 'width', 'height' ), or null. The media route and the
+ * share preview tags both use it, so the tags describe the file that's actually served.
+ */
+function pressshot_generated_size( $id, array $keys ) {
+	$file = get_attached_file( $id );
+	$meta = wp_get_attachment_metadata( $id );
+	if ( ! $file || ! is_array( $meta ) ) {
+		return null;
+	}
+	foreach ( $keys as $key ) {
+		$size = isset( $meta['sizes'][ $key ] ) && is_array( $meta['sizes'][ $key ] ) ? $meta['sizes'][ $key ] : array();
+		$name = isset( $size['file'] ) ? wp_basename( (string) $size['file'] ) : '';
+		$mime = ! empty( $size['mime-type'] ) ? (string) $size['mime-type'] : (string) get_post_mime_type( $id );
+		if ( '' === $name || ! is_file( dirname( $file ) . '/' . $name ) || ! in_array( $mime, pressshot_media_mimes(), true ) ) {
+			continue;
+		}
+		return array(
+			'file'   => dirname( $file ) . '/' . $name,
+			'mime'   => $mime,
+			'width'  => isset( $size['width'] ) ? (int) $size['width'] : 0,
+			'height' => isset( $size['height'] ) ? (int) $size['height'] : 0,
+		);
+	}
+	return null;
+}
+
 /**
  * Opens a shot's local file and returns a streaming response, or a WP_Error.
  * A VideoPress-only video (no local file) is never streamed from anywhere else; it is a 404 here.
@@ -237,23 +270,18 @@ function pressshot_stream_file( $attachment_id, WP_REST_Request $request, $size 
 	}
 	$base    = realpath( wp_get_upload_dir()['basedir'] );
 	$file    = get_attached_file( $id );
-	$allowed = array( 'image/png', 'image/jpeg', 'image/webp', 'image/gif', 'video/mp4', 'video/quicktime' );
+	$allowed = pressshot_media_mimes();
 	// "medium" serves the medium file, "large" the 1536px file or else WordPress's large one; anything else is the original.
-	$candidates = array(
+	$keys = array(
 		'medium' => array( 'medium' ),
 		'large'  => array( '1536x1536', 'large' ),
 	);
-	if ( isset( $candidates[ $size ] ) && $file && 0 === strpos( (string) $mime, 'image/' ) && in_array( $mime, $allowed, true ) ) {
-		// Prefer a generated size when it sits beside the original. It then goes through the same checks below.
-		$meta = wp_get_attachment_metadata( $id );
-		foreach ( $candidates[ $size ] as $key ) {
-			$name = isset( $meta['sizes'][ $key ]['file'] ) ? wp_basename( (string) $meta['sizes'][ $key ]['file'] ) : '';
-			if ( '' !== $name && is_file( dirname( $file ) . '/' . $name ) ) {
-				$file      = dirname( $file ) . '/' . $name;
-				$size_mime = isset( $meta['sizes'][ $key ]['mime-type'] ) ? (string) $meta['sizes'][ $key ]['mime-type'] : '';
-				$mime      = in_array( $size_mime, $allowed, true ) ? $size_mime : $mime;
-				break;
-			}
+	if ( isset( $keys[ $size ] ) && $file && 0 === strpos( (string) $mime, 'image/' ) && in_array( $mime, $allowed, true ) ) {
+		$generated = pressshot_generated_size( $id, $keys[ $size ] );
+		if ( $generated ) {
+			// It then goes through the same path checks as the original below.
+			$file = $generated['file'];
+			$mime = $generated['mime'];
 		}
 	}
 	$path = $file ? realpath( $file ) : false;

@@ -49,6 +49,11 @@ $tag_of = function ( $key ) {
 	}
 	return null;
 };
+$emit_body = function ( $response ) {
+	ob_start();
+	$response->emit( 'GET' );
+	return ob_get_clean();
+};
 $head = function () {
 	ob_start();
 	do_action( 'wp_head' );
@@ -137,3 +142,31 @@ $as_share( $big_link['token'] );
 $check( 'Jetpack Open Graph is off on share requests', false === apply_filters( 'jetpack_enable_open_graph', true ) );
 $not_share();
 $check( 'Jetpack Open Graph is untouched elsewhere', true === apply_filters( 'jetpack_enable_open_graph', true ) );
+
+// Review fixes: one size choice for the tags and the media route, and Yoast stays quiet.
+$as_share( $big_link['token'] );
+wp_update_attachment_metadata( $big, wp_generate_attachment_metadata( $big, $big_path ) );
+$meta    = wp_get_attachment_metadata( $big );
+$dir     = dirname( $big_path );
+$serve   = function () use ( $call, $big_link, $big ) {
+	return $call( 'GET', '/pressshot/v1/links/' . $big_link['token'] . '/shots/' . $big . '/media', array( 'size' => 'large' ) );
+};
+$meta['sizes']['1536x1536']['mime-type'] = 'image/avif';
+wp_update_attachment_metadata( $big, $meta );
+$res = $serve();
+$check( 'a 1536 size in a format the route won\'t serve is skipped for large', 'image/png' === $res->get_headers()['Content-Type'] && $emit_body( $res ) === file_get_contents( $dir . '/' . $meta['sizes']['large']['file'] ) );
+$check( 'the tags then give the large size\'s dimensions', (string) $meta['sizes']['large']['width'] === $tag_of( 'og:image:width' ) );
+$meta['sizes']['1536x1536']['mime-type'] = 'image/png';
+wp_update_attachment_metadata( $big, $meta );
+unlink( $dir . '/' . $meta['sizes']['1536x1536']['file'] );
+$check( 'a missing 1536 file: the tags give the large size\'s dimensions', (string) $meta['sizes']['large']['width'] === $tag_of( 'og:image:width' ) && (string) $meta['sizes']['large']['height'] === $tag_of( 'og:image:height' ) );
+
+$check( 'Yoast prints nothing on share requests', array() === apply_filters( 'wpseo_frontend_presenters', array( 'x' ) ) );
+$not_share();
+$check( 'Yoast is untouched elsewhere', array( 'x' ) === apply_filters( 'wpseo_frontend_presenters', array( 'x' ) ) );
+
+// An expired link has no tags either.
+$exp = pressshot_link_create( 'shot', $big );
+update_post_meta( $exp['id'], '_pressshot_link_expires', time() - 60 );
+$as_share( $exp['token'] );
+$check( 'expired link: no tags', array() === pressshot_share_preview_tags() );

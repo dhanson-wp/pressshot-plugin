@@ -6,20 +6,16 @@
  */
 
 /**
- * The preview image's width and height: the 1536px or large size the media route serves, else
- * the original. Empty when the metadata doesn't say.
+ * The preview image's width and height: those of the file the media route serves for size=large
+ * (the 1536px or large size), else the original's. Empty when the metadata doesn't say.
  */
 function pressshot_share_preview_dimensions( $id ) {
+	$generated = pressshot_generated_size( $id, array( '1536x1536', 'large' ) );
+	if ( $generated && $generated['width'] && $generated['height'] ) {
+		return array( $generated['width'], $generated['height'] );
+	}
 	$meta = wp_get_attachment_metadata( $id );
-	if ( ! is_array( $meta ) ) {
-		return array();
-	}
-	foreach ( array( '1536x1536', 'large' ) as $key ) {
-		if ( ! empty( $meta['sizes'][ $key ]['width'] ) && ! empty( $meta['sizes'][ $key ]['height'] ) ) {
-			return array( (int) $meta['sizes'][ $key ]['width'], (int) $meta['sizes'][ $key ]['height'] );
-		}
-	}
-	return ! empty( $meta['width'] ) && ! empty( $meta['height'] ) ? array( (int) $meta['width'], (int) $meta['height'] ) : array();
+	return is_array( $meta ) && ! empty( $meta['width'] ) && ! empty( $meta['height'] ) ? array( (int) $meta['width'], (int) $meta['height'] ) : array();
 }
 
 /**
@@ -108,11 +104,19 @@ add_action(
 	5
 );
 
-// One set of preview tags: Jetpack's would describe the site, not the shot.
+// One set of preview tags: Jetpack's and Yoast's would describe the site, not the shot.
 add_filter(
 	'jetpack_enable_open_graph',
 	function ( $enabled ) {
 		return pressshot_share_is_request() ? false : $enabled;
+	},
+	99
+);
+
+add_filter(
+	'wpseo_frontend_presenters',
+	function ( $presenters ) {
+		return pressshot_share_is_request() ? array() : $presenters;
 	},
 	99
 );
