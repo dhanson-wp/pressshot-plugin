@@ -652,8 +652,8 @@ function pressshot_get_link_media( WP_REST_Request $request ) {
 	if ( ! $link || ! ctype_digit( (string) $request['shot'] ) || ! pressshot_link_covers_shot( $link, $shot_id ) ) {
 		return pressshot_link_private_response( pressshot_link_unavailable() );
 	}
-	// Any size other than "medium" means the full file.
-	$response = pressshot_stream_file( $shot_id, $request, 'medium' === $request['size'] ? 'medium' : '' );
+	// "medium" and "large" serve a smaller generated file when there is one; any other size means the full file.
+	$response = pressshot_stream_file( $shot_id, $request, in_array( $request['size'], array( 'medium', 'large' ), true ) ? $request['size'] : '' );
 	if ( is_wp_error( $response ) && 404 === ( $response->get_error_data()['status'] ?? 0 ) ) {
 		$response = pressshot_link_unavailable();
 	}
@@ -747,7 +747,7 @@ add_action(
 				'methods'             => WP_REST_Server::READABLE,
 				'callback'            => 'pressshot_get_link_media',
 				'permission_callback' => '__return_true',
-				// Deliberately no args: the router must not reject a bad size or download value. Any size but "medium" is the full file, and every failure is our one 404.
+				// Deliberately no args: the router must not reject a bad size or download value. Any size but "medium" or "large" is the full file, and every failure is our one 404.
 			)
 		);
 		register_rest_route(
