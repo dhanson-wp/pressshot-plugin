@@ -238,14 +238,22 @@ function pressshot_stream_file( $attachment_id, WP_REST_Request $request, $size 
 	$base    = realpath( wp_get_upload_dir()['basedir'] );
 	$file    = get_attached_file( $id );
 	$allowed = array( 'image/png', 'image/jpeg', 'image/webp', 'image/gif', 'video/mp4', 'video/quicktime' );
-	if ( 'medium' === $size && $file && 0 === strpos( (string) $mime, 'image/' ) && in_array( $mime, $allowed, true ) ) {
-		// Prefer the generated medium file when it sits beside the original. It then goes through the same checks below.
-		$meta   = wp_get_attachment_metadata( $id );
-		$medium = isset( $meta['sizes']['medium']['file'] ) ? wp_basename( (string) $meta['sizes']['medium']['file'] ) : '';
-		if ( '' !== $medium && is_file( dirname( $file ) . '/' . $medium ) ) {
-			$file       = dirname( $file ) . '/' . $medium;
-			$size_mime  = isset( $meta['sizes']['medium']['mime-type'] ) ? (string) $meta['sizes']['medium']['mime-type'] : '';
-			$mime       = in_array( $size_mime, $allowed, true ) ? $size_mime : $mime;
+	// "medium" serves the medium file, "large" the 1536px file or else WordPress's large one; anything else is the original.
+	$candidates = array(
+		'medium' => array( 'medium' ),
+		'large'  => array( '1536x1536', 'large' ),
+	);
+	if ( isset( $candidates[ $size ] ) && $file && 0 === strpos( (string) $mime, 'image/' ) && in_array( $mime, $allowed, true ) ) {
+		// Prefer a generated size when it sits beside the original. It then goes through the same checks below.
+		$meta = wp_get_attachment_metadata( $id );
+		foreach ( $candidates[ $size ] as $key ) {
+			$name = isset( $meta['sizes'][ $key ]['file'] ) ? wp_basename( (string) $meta['sizes'][ $key ]['file'] ) : '';
+			if ( '' !== $name && is_file( dirname( $file ) . '/' . $name ) ) {
+				$file      = dirname( $file ) . '/' . $name;
+				$size_mime = isset( $meta['sizes'][ $key ]['mime-type'] ) ? (string) $meta['sizes'][ $key ]['mime-type'] : '';
+				$mime      = in_array( $size_mime, $allowed, true ) ? $size_mime : $mime;
+				break;
+			}
 		}
 	}
 	$path = $file ? realpath( $file ) : false;

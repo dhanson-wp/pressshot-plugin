@@ -259,3 +259,24 @@ $check( 'deactivation removes the share and /shots rules', ! isset( $rules['^s/(
 $check( 'deactivation forgets the rewrite version so reactivating flushes', false === get_option( 'pressshot_rewrite_version' ) );
 pressshot_share_activate();
 $check( 'reactivating restores both rules', isset( get_option( 'rewrite_rules' )['^s/([A-Za-z0-9]{32})/?$'] ) && isset( get_option( 'rewrite_rules' )[ pressshot_shots_rule() ] ) );
+
+// Large size: the share media route serves WordPress's large intermediate when one exists.
+$big_path = wp_upload_dir()['path'] . '/pstest-big-' . $tag . '.png';
+$big_img  = imagecreatetruecolor( 2000, 1200 );
+for ( $x = 0; $x < 2000; $x += 7 ) {
+	imageline( $big_img, $x, 0, 2000 - $x, 1200, imagecolorallocate( $big_img, $x % 255, ( $x * 3 ) % 255, ( $x * 7 ) % 255 ) );
+}
+imagepng( $big_img, $big_path );
+$big = wp_insert_attachment( array( 'post_mime_type' => 'image/png', 'post_title' => 'Big', 'post_status' => 'inherit', 'post_author' => $uploader ), $big_path );
+update_post_meta( $big, '_pressshot_capture', 1 );
+$GLOBALS['pressshot_test_made']['attachments'][] = $big;
+wp_update_attachment_metadata( $big, wp_generate_attachment_metadata( $big, $big_path ) );
+$big_link = pressshot_link_create( 'shot', $big );
+$large    = $call( 'GET', '/pressshot/v1/links/' . $big_link['token'] . '/shots/' . $big . '/media', array( 'size' => 'large' ) );
+$big_meta = wp_get_attachment_metadata( $big );
+$big_1536 = dirname( $big_path ) . '/' . $big_meta['sizes']['1536x1536']['file'];
+$check( 'large size serves the 1536px file', 200 === $large->get_status() && $emit( $large ) === file_get_contents( $big_1536 ) );
+$tiny      = $make_shot( $uploader );
+$tiny_link = pressshot_link_create( 'shot', $tiny );
+$tiny_res  = $call( 'GET', '/pressshot/v1/links/' . $tiny_link['token'] . '/shots/' . $tiny . '/media', array( 'size' => 'large' ) );
+$check( 'large size falls back to the full file when there are no intermediates', 200 === $tiny_res->get_status() && $emit( $tiny_res ) === $png );
