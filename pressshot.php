@@ -34,6 +34,8 @@ require_once __DIR__ . '/includes/links.php';
 
 require_once __DIR__ . '/includes/share-pages.php';
 
+require_once __DIR__ . '/includes/share-preview.php';
+
 require_once __DIR__ . '/includes/shots-page.php';
 
 require_once __DIR__ . '/includes/public-surface.php';
